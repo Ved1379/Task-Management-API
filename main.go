@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 type Task struct {
-	ID          int    `json:"Id"`
+	ID          int    `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
@@ -23,10 +25,30 @@ func main() {
 	fmt.Println("Server started on port 8080")
 	http.HandleFunc("/", Homehandler)
 	http.HandleFunc("/tasks", taskHandler)
+	http.HandleFunc("/tasks/", taskHandler)
 	http.ListenAndServe(":8080", nil)
 }
 
 func taskHandler(w http.ResponseWriter, r *http.Request) {
+
+	parts := strings.Split(r.URL.Path, "/")
+
+	if r.URL.Path != "/tasks" {
+		id, err := strconv.Atoi(parts[2])
+
+		if err != nil {
+			fmt.Fprintln(w, "Invalid task Id")
+			return
+		}
+
+		for _, task := range tasks {
+			if id == task.ID {
+				json.NewEncoder(w).Encode(task)
+				return
+			}
+		}
+		fmt.Println("Task ID:", id)
+	}
 
 	if r.Method == http.MethodGet {
 		for _, task := range tasks {
