@@ -7,9 +7,13 @@ import (
 )
 
 type Task struct {
+	ID          int    `json:"Id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
+
+var tasks []Task
+var nextID = 1
 
 func Homehandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Welcome to Task Management API")
@@ -25,7 +29,11 @@ func main() {
 func taskHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
-		fmt.Fprintln(w, "No tasks yet")
+		for _, task := range tasks {
+			fmt.Fprintln(w, "ID:", task.ID)
+			fmt.Fprintln(w, "Title:", task.Title)
+			fmt.Fprintln(w, "Description:", task.Description)
+		}
 	}
 
 	if r.Method == http.MethodPost {
@@ -38,6 +46,11 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Invalid JSON")
 			return
 		}
+
+		task.ID = nextID
+		nextID++
+
+		tasks = append(tasks, task)
 
 		fmt.Fprintln(w, "Task created:", task.Title)
 	}
