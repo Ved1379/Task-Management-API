@@ -1,11 +1,16 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type Task struct {
@@ -16,12 +21,48 @@ type Task struct {
 
 var tasks []Task
 var nextID = 1
+var db *sql.DB
 
 func Homehandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Welcome to Task Management API")
 }
 
 func main() {
+	err := godotenv.Overload()
+
+	if err != nil {
+		fmt.Println("Error loading .env")
+		return
+	}
+
+	connectionString := "host=" + os.Getenv("DB_HOST") +
+		" port=" + os.Getenv("DB_PORT") +
+		" user=" + os.Getenv("DB_USER") +
+		" password=" + os.Getenv("DB_PASSWORD") +
+		" dbname=" + os.Getenv("DB_NAME") +
+		" sslmode=disable"
+
+	fmt.Println("HOST:", os.Getenv("DB_HOST"))
+	fmt.Println("PORT:", os.Getenv("DB_PORT"))
+	fmt.Println("USER:", os.Getenv("DB_USER"))
+	fmt.Println("DB NAME:", os.Getenv("DB_NAME"))
+	fmt.Println("SSL MODE: disable")
+
+	db, err = sql.Open("postgres", connectionString)
+	db, err = sql.Open("postgres", connectionString)
+
+	if err != nil {
+		fmt.Println("Database connection error", err)
+		return
+	}
+
+	err = db.Ping()
+
+	if err != nil {
+		fmt.Println("Database is not reaachable", err)
+		return
+	}
+	fmt.Println("Database connected Successfully")
 	fmt.Println("Server started on port 8080")
 	http.HandleFunc("/", Homehandler)
 	http.HandleFunc("/tasks", taskHandler)
@@ -53,13 +94,20 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintln(w, "Invalid JSON")
 				return
 			}
+			query := "INSERT INTO tasks (title, description) VALUES ($1, $2) RETURNING id"
 
-			task.ID = nextID
-			nextID++
+			fmt.Println("SQL:", query)
+			err = db.QueryRow(
+				query,
+				task.Title,
+				task.Description,
+			).Scan(&task.ID)
 
-			tasks = append(tasks, task)
-
-			fmt.Fprintln(w, "Task created:", task.Title)
+			if err != nil {
+				fmt.Fprintln(w, "Error creating task", err)
+				return
+			}
+			json.NewEncoder(w).Encode(task)
 		}
 
 		return
@@ -113,9 +161,8 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Fprintln(w, "Task not found")
 		return
-	} // ← PUT ENDS HERE
+	}
 
-	// DELETE GOES HERE
 	if r.Method == http.MethodDelete {
 
 		for i, task := range tasks {
