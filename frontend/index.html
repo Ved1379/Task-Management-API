@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+</head>
+<body>
+    <h1>Task Manager</h1>
+    <p>Frontend is connected to Go.
+    </p>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Task Manager</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>Task Manager</h1>
+        <p>Manage your tasks</p>
+
+        <form id="taskForm">
+
+            <input
+                type="text"
+                id="title"
+                placeholder="Task title"
+                required
+            >
+
+            <textarea
+                id="description"
+                placeholder="Task description"
+                required
+            ></textarea>
+
+            <button type="submit">
+                Add Task
+            </button>
+
+        </form>
+
+        <h2>My Tasks</h2>
+
+        <div id="taskList"></div>
+
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+</html>

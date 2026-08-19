@@ -64,7 +64,7 @@ func main() {
 	}
 	fmt.Println("Database connected Successfully")
 	fmt.Println("Server started on port 8080")
-	http.HandleFunc("/", Homehandler)
+	http.Handle("/", http.FileServer(http.Dir("./frontend")))
 	http.HandleFunc("/tasks", taskHandler)
 	http.HandleFunc("/tasks/", taskHandler)
 	http.ListenAndServe(":8080", nil)
@@ -77,11 +77,42 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/tasks" {
 
 		if r.Method == http.MethodGet {
-			for _, task := range tasks {
-				fmt.Fprintln(w, "ID:", task.ID)
-				fmt.Fprintln(w, "Title:", task.Title)
-				fmt.Fprintln(w, "Description:", task.Description)
+
+			rows, err := db.Query("SELECT id, title, description FROM tasks")
+
+			if err != nil {
+				http.Error(w, "Error fetching tasks", http.StatusInternalServerError)
+				return
 			}
+			defer rows.Close()
+
+			var tasks []Task
+
+			for rows.Next() {
+
+				var task Task
+
+				err := rows.Scan(
+					&task.ID,
+					&task.Title,
+					&task.Description,
+				)
+				if err != nil {
+					http.Error(w, "Error in reading tasks", http.StatusInternalServerError)
+					return
+				}
+				tasks = append(tasks, task)
+			}
+
+			if err := rows.Err(); err != nil {
+				http.Error(w, "Error reading tasks", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(tasks)
+
+			return
+
 		}
 
 		if r.Method == http.MethodPost {
@@ -144,39 +175,72 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 		err := json.NewDecoder(r.Body).Decode(&updatedTask)
 
 		if err != nil {
-			fmt.Fprintln(w, "Invalid JSON")
+			fmt.Fprintln(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
 
-		for i, task := range tasks {
-			if id == task.ID {
+		query := `
+		UPDATE tasks
+		SET title = $1, description = $2
+		WHERE id = $3
+		RETURNING id, title, description
+		`
+		err = db.QueryRow(
+			query,
+			updatedTask.Title,
+			updatedTask.Description,
+			id,
+		).Scan(
+			&updatedTask.ID,
+			&updatedTask.Title,
+			&updatedTask.Description,
+		)
 
-				updatedTask.ID = task.ID
-				tasks[i] = updatedTask
-
-				json.NewEncoder(w).Encode(updatedTask)
-				return
-			}
+		if err == sql.ErrNoRows {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
 		}
 
-		fmt.Fprintln(w, "Task not found")
+		if err != nil {
+			http.Error(w, "Error updating task", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		json.NewEncoder(w).Encode(updatedTask)
+
 		return
 	}
 
 	if r.Method == http.MethodDelete {
 
-		for i, task := range tasks {
+		query := "DELETE FROM tasks WHERE id = $1"
 
-			if id == task.ID {
+		result, err := db.Exec(query, id)
 
-				tasks = append(tasks[:i], tasks[i+1:]...)
-
-				fmt.Fprintln(w, "Task deleted:", task.Title)
-				return
-			}
+		if err != nil {
+			http.Error(w, "Error deleting task", http.StatusInternalServerError)
+			return
 		}
 
-		fmt.Fprintln(w, "Task not found")
+		rowsAffected, err := result.RowsAffected()
+
+		if err != nil {
+			http.Error(w, "Error checking deleted task", http.StatusInternalServerError)
+			return
+		}
+
+		if rowsAffected == 0 {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Task deleted successfully",
+		})
+
 		return
 	}
 }
