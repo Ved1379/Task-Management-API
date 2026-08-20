@@ -49,7 +49,6 @@ func main() {
 	fmt.Println("SSL MODE: disable")
 
 	db, err = sql.Open("postgres", connectionString)
-	db, err = sql.Open("postgres", connectionString)
 
 	if err != nil {
 		fmt.Println("Database connection error", err)
@@ -66,106 +65,131 @@ func main() {
 	fmt.Println("Server started on port 8080")
 	http.Handle("/", http.FileServer(http.Dir("./frontend")))
 	http.HandleFunc("/tasks", taskHandler)
-	http.HandleFunc("/tasks/", taskHandler)
+	http.HandleFunc("/tasks/", taskIDByHandler)
 	http.ListenAndServe(":8080", nil)
 }
 
 func taskHandler(w http.ResponseWriter, r *http.Request) {
 
-	parts := strings.Split(r.URL.Path, "/")
+	if r.Method == http.MethodGet {
 
-	if r.URL.Path == "/tasks" {
+		rows, err := db.Query("SELECT id, title, description FROM tasks")
 
-		if r.Method == http.MethodGet {
-
-			rows, err := db.Query("SELECT id, title, description FROM tasks")
-
-			if err != nil {
-				http.Error(w, "Error fetching tasks", http.StatusInternalServerError)
-				return
-			}
-			defer rows.Close()
-
-			var tasks []Task
-
-			for rows.Next() {
-
-				var task Task
-
-				err := rows.Scan(
-					&task.ID,
-					&task.Title,
-					&task.Description,
-				)
-				if err != nil {
-					http.Error(w, "Error in reading tasks", http.StatusInternalServerError)
-					return
-				}
-				tasks = append(tasks, task)
-			}
-
-			if err := rows.Err(); err != nil {
-				http.Error(w, "Error reading tasks", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(tasks)
-
+		if err != nil {
+			http.Error(w, "Error fetching tasks", http.StatusInternalServerError)
 			return
-
 		}
 
-		if r.Method == http.MethodPost {
+		defer rows.Close()
+
+		var tasks []Task
+
+		for rows.Next() {
 
 			var task Task
 
-			err := json.NewDecoder(r.Body).Decode(&task)
+			err := rows.Scan(
+				&task.ID,
+				&task.Title,
+				&task.Description,
+			)
 
 			if err != nil {
-				fmt.Fprintln(w, "Invalid JSON")
+				http.Error(w, "Error reading tasks", http.StatusInternalServerError)
 				return
 			}
-			query := "INSERT INTO tasks (title, description) VALUES ($1, $2) RETURNING id"
 
-			fmt.Println("SQL:", query)
-			err = db.QueryRow(
-				query,
-				task.Title,
-				task.Description,
-			).Scan(&task.ID)
-
-			if err != nil {
-				fmt.Fprintln(w, "Error creating task", err)
-				return
-			}
-			json.NewEncoder(w).Encode(task)
+			tasks = append(tasks, task)
 		}
+
+		if err := rows.Err(); err != nil {
+			http.Error(w, "Error reading tasks", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tasks)
 
 		return
 	}
+
+	if r.Method == http.MethodPost {
+
+		var task Task
+
+		err := json.NewDecoder(r.Body).Decode(&task)
+
+		if err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		query := `
+			INSERT INTO tasks (title, description)
+			VALUES ($1, $2)
+			RETURNING id
+		`
+
+		err = db.QueryRow(
+			query,
+			task.Title,
+			task.Description,
+		).Scan(&task.ID)
+
+		if err != nil {
+			http.Error(w, "Error creating task", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func taskIDByHandler(w http.ResponseWriter, r *http.Request) {
+
+	parts := strings.Split(r.URL.Path, "/")
 
 	id, err := strconv.Atoi(parts[2])
 
 	if err != nil {
-		fmt.Fprintln(w, "Invalid task Id")
+		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
 
 	if r.Method == http.MethodGet {
+		var task Task
 
-		found := false
+		query := `SELECT id,title, description FROM tasks
+			WHERE id = $1`
 
-		for _, task := range tasks {
-			if id == task.ID {
-				json.NewEncoder(w).Encode(task)
-				found = true
-				return
-			}
+		err := db.QueryRow(
+			query,
+			id,
+		).Scan(
+			&task.ID,
+			&task.Title,
+			&task.Description,
+		)
+
+		if err == sql.ErrNoRows {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
 		}
 
-		if !found {
-			fmt.Fprintln(w, "Task not found")
+		if err != nil {
+			http.Error(w, "Error fetching task", http.StatusInternalServerError)
+			return
 		}
+
+		w.Header().Set("Content-type", "application/json")
+		json.NewEncoder(w).Encode(task)
+
+		return
 	}
 
 	if r.Method == http.MethodPut {
@@ -175,16 +199,17 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 		err := json.NewDecoder(r.Body).Decode(&updatedTask)
 
 		if err != nil {
-			fmt.Fprintln(w, "Invalid JSON", http.StatusBadRequest)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
 
 		query := `
-		UPDATE tasks
-		SET title = $1, description = $2
-		WHERE id = $3
-		RETURNING id, title, description
+			UPDATE tasks
+			SET title = $1, description = $2
+			WHERE id = $3
+			RETURNING id, title, description
 		`
+
 		err = db.QueryRow(
 			query,
 			updatedTask.Title,
@@ -205,8 +230,8 @@ func taskHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error updating task", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(updatedTask)
 
 		return
